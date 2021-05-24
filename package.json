@@ -1,0 +1,20 @@
+{
+  "name": "siminfra",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.17.1",
+    "geojson-vt": "^3.2.1",
+    "http": "0.0.1-security",
+    "nodemon": "^2.0.6",
+    "socket.io": "^3.0.4",
+    "vt-pbf": "^3.1.1"
+  }
+}

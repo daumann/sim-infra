@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vector Tile Example</title>
+    <link
+            rel="stylesheet"
+            href="https://openlayers.org/en/v5.3.0/css/ol.css"
+            type="text/css"
+    />
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.3.1/dist/leaflet.css" />
+    <script type="text/javascript" src='https://d3js.org/d3.v4.min.js'></script>
+    <script type="text/javascript"  src="https://unpkg.com/leaflet@1.3.1/dist/leaflet.js"></script>
+    <script type="text/javascript"  src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.4/socket.io.js"></script>
+    <script src="https://cdn.rawgit.com/manubb/Leaflet.PixiOverlay/master/docs/js/example.min.js"></script>
+    <script type="text/javascript"  src="https://unpkg.com/leaflet.vectorgrid@1.3.0"></script>
+
+    <!--<script type="text/javascript" src="./js/example.min.js"></script>-->
+    <script type="text/javascript" src="./js/tools.min.js"></script>
+    <!--<script src="https://cdn.rawgit.com/openlayers/openlayers.github.io/master/en/v5.3.0/build/ol.js"></script>-->
+    <style>
+        .map {
+            width: 100%;
+            height: 100vh;
+        }
+        body {
+            margin: 0;
+        }
+    </style>
+</head>
+<body>
+<div id="map" class="map"></div>
+<script>
+    var getJSON = function(url, successHandler, errorHandler) {
+        var xhr = typeof XMLHttpRequest != 'undefined'
+            ? new XMLHttpRequest()
+            : new ActiveXObject('Microsoft.XMLHTTP');
+        xhr.open('get', url, true);
+        xhr.onreadystatechange = function() {
+            var status;
+            var data;
+            if (xhr.readyState == 4) {
+                status = xhr.status;
+                if (status == 200) {
+                    data = JSON.parse(xhr.responseText);
+                    successHandler && successHandler(data);
+                } else {
+                    errorHandler && errorHandler(status);
+                }
+            }
+        };
+        xhr.send();
+    };
+    var loader = new PIXI.loaders.Loader();
+    loader
+        .add('plane', 'img/plane.png')
+        .add('focusPlane', 'img/focus-plane.png')
+        .add('circle', 'img/circle.png')
+        .add('focusCircle', 'img/focus-circle.png')
+        .add('bicycle', 'img/bicycle.png')
+        .add('focusBicycle', 'img/focus-bicycle.png');
+    document.addEventListener("DOMContentLoaded", function() {
+        loader.load(function(loader, resources) {
+            var textures = [resources.plane.texture, resources.circle.texture, resources.bicycle.texture];
+            var focusTextures = [resources.focusPlane.texture, resources.focusCircle.texture, resources.focusBicycle.texture];
+            getJSON('communes.json', function(markers) {
+                var map = L.map('map').setView([46.953387, 2.892341], 6);
+
+                var openmaptilesUrl = "http://127.0.0.1:3000/{z}/{x}/{y}.pbf"; //https://free-{s}.tilehosting.com/data/v3/{z}/{x}/{y}.pbf.pict?key={key}";
+                var openmaptilesAttribution = '<a href="https://openmaptiles.org/">&copy; OpenMapTiles</a>, <a href="http://www.openstreetmap.org/copyright">&copy; OpenStreetMap</a> contributors';
+                var openmaptilesKey = 'VrAl6k9W8JkD4G5584Sz';	// API key only valid for leaflet.github.io
+
+                var vectorTileOptions = {
+                    rendererFactory: L.canvas.tile,
+                    attribution: openmaptilesAttribution,
+                    key: openmaptilesKey,
+                    subdomains: '0123',	// 01234 for openmaptiles, abcd for mapbox
+                    maxNativeZoom: 14,
+                    vectorTileLayerStyles: {
+                        'poi': function(properties, zoom) {
+                            return {
+                                weight: 2,
+                                color: 'red',
+                                opacity: 1,
+                                fillColor: 'yellow',
+                                fill: true,
+                                radius: 6,
+                                fillOpacity: 0.7
+                            }
+                        },
+
+                        'housenumber': function(properties, zoom) {
+                            return {
+                                weight: 2,
+                                color: 'purple',
+                                opacity: 1,
+                                fillColor: 'green',
+                                fill: true,
+                                radius: 4,
+                                fillOpacity: 0.3
+                            }
+                        },
+
+                        park: [],
+                        place: [],
+                        water: [],
+                        waterway: [],
+                        boundary: [],
+                        country_label: [],
+                        marine_label: [],
+                        state_label: [],
+                        place_label: [],
+                        waterway_label: [],
+                        water_name: [],
+                        landcover: [],
+                        landuse: [],
+                        landuse_overlay: [],
+                        road: [],
+                        transportation: [],
+                        waterway: [],
+                        aeroway: [],
+                        tunnel: [],
+                        bridge: [],
+                        barrier_line: [],
+                        building: [],
+                        road_label: [],
+                        road_name: [],
+                        transportation_name: [],
+                        housenum_label: [],
+                        mountain_peak: [],
+                    },
+                    interactive: true,	// Make sure that this VectorGrid fires mouse/pointer events
+                    getFeatureId: function(f) {
+                        return f.properties.osm_id;
+                    }
+                };
+                markers = markers.slice(0,500);
+                var highlight;
+                var clearHighlight = function() {
+                    if (highlight) {
+                        pbfLayer.resetFeatureStyle(highlight);
+                    }
+                    highlight = null;
+                };
+                var pbfLayer = L.vectorGrid.protobuf(openmaptilesUrl, vectorTileOptions)
+                    .on('click', function(e) {	// The .on method attaches an event handler
+                        L.popup()
+                            .setContent(e.layer.properties.name || e.layer.properties.type)
+                            // 					.setContent(JSON.stringify(e.layer))
+                            .setLatLng(e.latlng)
+                            .openOn(map);
+
+                        clearHighlight();
+                        highlight = e.layer.properties.osm_id;
+                        pbfLayer.setFeatureStyle(highlight, {
+                            weight: 2,
+                            color: 'red',
+                            opacity: 1,
+                            fillColor: 'red',
+                            fill: true,
+                            radius: 6,
+                            fillOpacity: 1
+                        })
+
+                        L.DomEvent.stop(e);
+                    })
+                    .addTo(map);
+                const socket = io("http://localhost:3000", {transports: ['websocket', 'polling', 'flashsocket']});
+                socket.on("marker", data => {
+                    const position = data;
+                    const marker = L.marker(position);
+                    marker.addTo(map);
+                })
+
+                map.on("click", event => {
+                    const position = [event.latlng.lat, event.latlng.lng];
+                    const marker = L.marker(position);
+                    marker.addTo(map);
+                    socket.emit("marker", position);
+                })
+
+                L.tileLayer('//stamen-tiles-{s}.a.ssl.fastly.net/toner/{z}/{x}/{y}.png', {
+                    subdomains: 'abcd',
+                    attribution: 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, under <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a>. Data by <a href="http://openstreetmap.org">OpenStreetMap</a>, under <a href="http://www.openstreetmap.org/copyright">ODbL</a>.',
+                    minZoom: 6,
+                    maxZoom: 18
+                }).addTo(map);
+                map.attributionControl.setPosition('bottomleft');
+                map.zoomControl.setPosition('bottomright');
+                // var legend = document.querySelector('div.legend.geometry');
+                // var legendContent = legend.querySelector('.content');
+                var pixiLayer = (function() {
+                    var firstDraw = true;
+                    var prevZoom;
+                    var markerSprites = [];
+                    var colorScale = d3.scaleLinear()
+                        .domain([0, 50, 100])
+                        .range(["#c6233c", "#ffd300", "#008000"]);
+
+                    var frame = null;
+                    var focus = null;
+                    var pixiContainer = new PIXI.Container();
+                    var doubleBuffering = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+                    return L.pixiOverlay(function(utils,event) {
+                        if(markerSprites[0]) console.debug(event.type, markerSprites[0].currentX, markerSprites[0].x, markerSprites[0].targetX)
+                        if (event.type === 'positionUpdate') {
+                            const newPositions = event.positions;
+                            markerSprites.forEach((marker, index) => {
+                                // const projected = project(newPositions[index]);
+                                // console.debug(marker,event)
+                                marker.x = marker.x+10;
+                                marker.y = marker.y+10;
+
+                                marker.currentX = marker.x;
+                                marker.currentY = marker.y;
+                                marker.targetX =  marker.targetX + 10;
+                                marker.targetY = marker.targetY + 10;
+                                // markerSprites.forEach(function(markerSprite) {
+                                //     var position = markerSprite.cache[zoom];
+                                //     // if (firstDraw) {
+                                //     //     markerSprite.x = position.x;
+                                //     //     markerSprite.y = position.y;
+                                //     //     markerSprite.scale.set((position.r * scale < 16) ? position.r / 16 : invScale);
+                                //     // } else {
+                                //         markerSprite.currentX = markerSprite.x;
+                                //         markerSprite.currentY = markerSprite.y;
+                                //         markerSprite.targetX =  markerSprite.targetX + 10;
+                                //         markerSprite.targetY = markerSprite.targetY + 10;
+                                //         // markerSprite.currentScale = markerSprite.scale.x;
+                                //         // markerSprite.targetScale = (position.r * scale < 16) ? position.r / 16 : invScale;
+                                //     // }
+                                // });
+                            })
+                        }
+                        var zoom = utils.getMap().getZoom();
+                        if (frame) {
+                            cancelAnimationFrame(frame);
+                            frame = null;
+                        }
+
+                        var container = utils.getContainer();
+                        var renderer = utils.getRenderer();
+                        var project = utils.latLngToLayerPoint;
+                        var scale = utils.getScale();
+                        var invScale = 1 / scale;
+                        if (firstDraw) {
+                            prevZoom = zoom;
+                            markers.forEach(function(marker) {
+                                var coords = project([marker.latitude, marker.longitude]);
+                                var index = Math.floor(Math.random() * textures.length);
+                                var markerSprite = new PIXI.Sprite(textures[index]);
+                                markerSprite.textureIndex = index;
+                                markerSprite.x0 = coords.x;
+                                markerSprite.y0 = coords.y;
+                                markerSprite.anchor.set(0.5, 0.5);
+                                var tint = d3.color(colorScale(marker.avancement || Math.random() * 100)).rgb();
+                                markerSprite.tint = 256 * (tint.r * 256 + tint.g) + tint.b;
+                                container.addChild(markerSprite);
+                                markerSprites.push(markerSprite);
+                                markerSprite.legend = marker.city || marker.label;
+                            });
+                            var quadTrees = {};
+                            for (var z = map.getMinZoom(); z <= map.getMaxZoom(); z++) {
+                                var rInit = ((z <= 7) ? 10 : 24) / utils.getScale(z);
+                                quadTrees[z] = window.solveCollision(markerSprites, {r0: rInit, zoom: z});
+                            }
+                            function findMarker(ll) {
+                                var layerPoint = project(ll);
+                                var quadTree = quadTrees[utils.getMap().getZoom()];
+                                var marker;
+                                var rMax = quadTree.rMax;
+                                var found = false;
+                                quadTree.visit(function(quad, x1, y1, x2, y2) {
+                                    if (!quad.length) {
+                                        var dx = quad.data.x - layerPoint.x;
+                                        var dy = quad.data.y - layerPoint.y;
+                                        var r = quad.data.scale.x * 16;
+                                        if (dx * dx + dy * dy <= r * r) {
+                                            marker = quad.data;
+                                            found = true;
+                                        }
+                                    }
+                                    return found || x1 > layerPoint.x + rMax || x2 + rMax < layerPoint.x || y1 > layerPoint.y + rMax || y2 + rMax < layerPoint.y;
+                                });
+                                return marker;
+                            }
+                            map.on('click', function(e) {
+                                var redraw = false;
+                                if (focus) {
+                                    focus.texture = textures[focus.textureIndex];
+                                    focus = null;
+                                    L.DomUtil.addClass(legend, 'hide');
+                                    legendContent.innerHTML = '';
+                                    redraw = true;
+                                }
+                                var marker = findMarker(e.latlng);
+                                if (marker) {
+                                    marker.texture = focusTextures[marker.textureIndex];
+                                    focus = marker;
+                                    legendContent.innerHTML = marker.legend;
+                                    L.DomUtil.removeClass(legend, 'hide');
+                                    redraw = true;
+                                }
+                                if (redraw) utils.getRenderer().render(container);
+                            });
+                            var self = this;
+                            map.on('mousemove', L.Util.throttle(function(e) {
+                                var marker = findMarker(e.latlng);
+                                if (marker) {
+                                    L.DomUtil.addClass(self._container, 'leaflet-interactive');
+                                } else {
+                                    L.DomUtil.removeClass(self._container, 'leaflet-interactive');
+                                }
+                            }, 32));
+                        }
+                        if (firstDraw || prevZoom !== zoom) {
+                            markerSprites.forEach(function(markerSprite) {
+                                var position = markerSprite.cache[zoom];
+                                if (firstDraw) {
+                                    console.debug("firstDraw")
+                                    markerSprite.x = position.x;
+                                    markerSprite.y = position.y;
+                                    markerSprite.scale.set((position.r * scale < 16) ? position.r / 16 : invScale);
+                                } else {
+                                    console.debug("prevZoom",markerSprite.currentX)
+                                    markerSprite.currentX = markerSprite.x;
+                                    markerSprite.currentY = markerSprite.y;
+                                    markerSprite.targetX = position.x;
+                                    markerSprite.targetY = position.y;
+                                    markerSprite.currentScale = markerSprite.scale.x;
+                                    markerSprite.targetScale = (position.r * scale < 16) ? position.r / 16 : invScale;
+                                }
+                            });
+                        }
+
+                        var start = null;
+                        var delta = 250;
+                        function animate(timestamp) {
+                            var progress;
+                            if (start === null) start = timestamp;
+                            progress = timestamp - start;
+                            var lambda = progress / delta;
+                            if (lambda > 1) lambda = 1;
+                            lambda = lambda * (0.4 + lambda * (2.2 + lambda * -1.6));
+                            markerSprites.forEach(function(markerSprite) {
+                                markerSprite.x = markerSprite.currentX + lambda * (markerSprite.targetX - markerSprite.currentX);
+                                markerSprite.y = markerSprite.currentY + lambda * (markerSprite.targetY - markerSprite.currentY);
+                                markerSprite.scale.set(markerSprite.currentScale + lambda * (markerSprite.targetScale - markerSprite.currentScale));
+                            });
+                            renderer.render(container);
+                            if (progress < delta) {
+                                frame = requestAnimationFrame(animate);
+                            }
+                        }
+                        if (!firstDraw && prevZoom !== zoom) {
+                            frame = requestAnimationFrame(animate);
+                        }
+                        firstDraw = false;
+                        prevZoom = zoom;
+                        renderer.render(container);
+                    }, pixiContainer, {
+                        doubleBuffering: doubleBuffering,
+                        destroyInteractionManager: true
+                    });
+                })();
+
+                pixiLayer.addTo(map);
+
+
+                setInterval(() => {
+                    pixiLayer.redraw({
+                        type: 'positionUpdate',
+                        positions: [1,10,100],
+                        keys: [1,10,100]
+                    });
+                }, 1000)
+            });
+        });
+    });
+</script>
+</body>
+</html>
